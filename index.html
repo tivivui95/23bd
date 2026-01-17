@@ -1,0 +1,2302 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Happy Birthday to you</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #050505;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            user-select: none;
+        }
+
+        #canvas-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            z-index: 15; /* Higher than camera-wrapper */
+            pointer-events: none;
+        }
+
+        /* COMPACT UI */
+        #ui-layer {
+            position: absolute;
+            top: 15px;
+            left: 15px;
+            z-index: 20;
+            color: #ff69b4; 
+            background: rgba(0, 0, 0, 0.6);
+            padding: 12px;
+            border-radius: 12px;
+            border: 1px solid rgba(255, 105, 180, 0.2);
+            font-size: 12px;
+            line-height: 1.4;
+            width: 210px;
+            backdrop-filter: blur(6px);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.4);
+            pointer-events: auto;
+            transition: height 0.3s ease;
+        }
+
+        #ui-layer.collapsed {
+            width: auto;
+            min-width: 120px;
+        }
+        
+        #ui-layer.collapsed #ui-content {
+            display: none;
+        }
+
+        .ui-header-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+            padding-bottom: 4px;
+            margin-bottom: 8px;
+        }
+
+        #ui-layer h1 {
+            margin: 0;
+            font-size: 14px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: #fff;
+            pointer-events: none;
+        }
+
+        #btn-collapse {
+            background: none;
+            border: none;
+            color: #ff69b4;
+            font-weight: bold;
+            font-size: 16px;
+            cursor: pointer;
+            padding: 0 5px;
+            line-height: 1;
+        }
+        #btn-collapse:hover {
+            color: #fff;
+        }
+
+        .stat-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 4px;
+            pointer-events: none;
+        }
+
+        .value {
+            font-weight: bold;
+            color: #fff;
+        }
+
+        /* Voice Toggle Button */
+        #btn-voice {
+            width: 100%;
+            margin-top: 5px;
+            margin-bottom: 8px;
+            padding: 8px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 105, 180, 0.3);
+            border-radius: 6px;
+            color: #ddd;
+            cursor: pointer;
+            font-size: 11px;
+            text-transform: uppercase;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        #btn-voice:hover {
+            background: rgba(255, 105, 180, 0.2);
+            color: #fff;
+        }
+
+        #btn-voice.active {
+            background: rgba(0, 255, 255, 0.2); 
+            color: #0ff;
+            border-color: #0ff;
+            box-shadow: 0 0 10px rgba(0, 255, 255, 0.3);
+        }
+
+        /* Draggable & Resizable Camera Wrapper */
+        #camera-wrapper {
+            position: absolute;
+            bottom: 15px;
+            right: 15px;
+            width: 200px;
+            height: 150px;
+            z-index: 18; /* Higher than canvas-container (15) */
+            background: rgba(0,0,0,0.5);
+            border: 1px solid #444;
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            resize: both; /* Enable resizing */
+            overflow: hidden; /* Required for resize handle */
+            min-width: 100px;
+            min-height: 80px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.5);
+            pointer-events: auto;
+        }
+
+        #camera-handle {
+            background: rgba(255, 105, 180, 0.2);
+            color: #ccc;
+            font-size: 10px;
+            text-align: center;
+            cursor: grab;
+            padding: 2px 0;
+            user-select: none;
+            flex-shrink: 0;
+        }
+        #camera-handle:active {
+            cursor: grabbing;
+            background: rgba(255, 105, 180, 0.4);
+        }
+
+        #webcam-preview {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transform: scaleX(-1); 
+            opacity: 0.8;
+            pointer-events: none; /* Let events pass to wrapper for resize */
+        }
+
+        /* Fullscreen override for AR mode */
+        #camera-wrapper.fullscreen {
+            width: 100vw !important;
+            height: 100vh !important;
+            top: 0 !important;
+            left: 0 !important;
+            right: auto !important;
+            bottom: auto !important;
+            border: none;
+            border-radius: 0;
+            resize: none;
+            background: black;
+            z-index: 1 !important; /* Move BEHIND canvas-container (15) in AR mode */
+            pointer-events: none; /* Let clicks pass through to canvas if needed */
+        }
+        
+        #camera-wrapper.fullscreen #camera-handle {
+            display: none;
+        }
+        
+        #camera-wrapper.fullscreen #webcam-preview {
+            opacity: 1.0;
+        }
+
+        #loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            z-index: 30;
+            font-size: 18px;
+            text-align: center;
+            background: rgba(0,0,0,0.8);
+            padding: 20px;
+            border-radius: 12px;
+            pointer-events: none;
+        }
+
+        #voice-indicator {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: #555;
+            transition: all 0.2s;
+        }
+        #voice-indicator.listening {
+            background-color: #00ff00;
+            box-shadow: 0 0 6px #00ff00;
+        }
+
+    </style>
+
+    <!-- Three.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    
+    <!-- MediaPipe Hands -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+    <style>
+        /* Fix for GitHub Pages 404s */
+    </style>
+</head>
+<body>
+
+    <!-- Background Music -->
+    <audio id="background-music" loop>
+        <source src="Birthday Song Piano cover (Happy birthday to me XD).mp3" type="audio/mpeg">
+    </audio>
+
+    <div id="loading">Starting System...<br><span style="font-size:14px; color:#aaa;">Allow Camera & Mic</span></div>
+
+    <div id="ui-layer">
+        <div class="ui-header-row">
+            <h1>Controls</h1>
+            <button id="btn-collapse">−</button>
+        </div>
+        
+        <div id="ui-content">
+            <button id="btn-voice">
+                <div id="voice-indicator"></div>
+                <span id="voice-btn-text">Enable Voice Mode</span>
+            </button>
+
+            <div class="stat-row">
+                <span>Gesture/Word:</span>
+                <span id="gesture-val" class="value">...</span>
+            </div>
+            <div class="stat-row">
+                <span>Fingers:</span>
+                <span id="finger-val" class="value">0</span>
+            </div>
+            
+            <!-- <hr style="border: 0; border-top: 1px solid rgba(255,255,255,0.1); margin: 5px 0;">
+            <div style="font-size: 11px; color: #ddd; pointer-events: none;">
+                <b>Voice Mode ON:</b><br>
+                🎤 Say ANY word<br>
+                👋 Touch text to scatter<br>
+                <br>
+                <b>Voice Mode OFF:</b><br>
+                ☝️ 1: "I"<br>
+                ✌️ 2: "LOVE"<br>
+                🤟 3: "YOU"<br>
+                ✋ 4: "I LOVE YOU"<br>
+                ✊ Fist: Shrink
+            </div> -->
+        </div>
+    </div>
+
+    <!-- Camera Wrapper for Drag & Resize -->
+    <div id="camera-wrapper">
+        <div id="camera-handle">:: Drag to Move ::</div>
+        <video id="webcam-preview" playsinline></video>
+    </div>
+    
+    <div id="canvas-container"></div>
+
+
+    <script>
+        /**
+         * CONFIGURATION
+         */
+        const CONFIG = {
+            particleCount: 40000, 
+            text1: "I",
+            text2: "LOVE",
+            text3: "YOU",
+            text4: "I LOVE YOU",
+            particleSize: 0.08, 
+            scatterRadius: 35,
+            textScale: 0.0275, // Half of original size (0.055 / 2)
+            camZ: 40,
+            interactionRadius: 8.0, 
+            repulsionStrength: 8.0 
+        };
+
+        /**
+         * STATE MANAGEMENT
+         */
+        const state = {
+            targetGestureLabel: "Waiting...",
+            currentWeights: [0, 0, 0, 0, 0], 
+            targetWeights: [0, 0, 0, 0, 0],
+            
+            spreadTarget: 1.0, 
+            currentSpread: 1.0, 
+            
+            scatterScaleTarget: 1.0, 
+            currentScatterScale: 1.0,
+
+            fingerCount: 0,
+            galaxyEffectActive: false, 
+            
+            voiceModeActive: false,
+            wasVoiceModeActive: false,
+            voiceEnabledByUser: false, 
+
+            // Rotation Logic
+            handPositionRaw: { x: 0.5, y: 0.5 },
+            
+            // Interaction Physics Logic
+            handPositions: [], 
+            isHandDetected: false
+        };
+
+        /**
+         * BIRTHDAY SEQUENCE STATE MANAGEMENT
+         */
+        const sequenceState = {
+            phase: 'wait', // wait, countdown, happyBirthday, text, gallery, final
+            startTime: null,
+            isActive: false,
+            birthdayMessages: [
+                "Tuổi 23 rồi nè cục cưng",
+                "Chúc bé iu xinh hơn, đẹp hơn",
+                "Chúc bé iu đạt được HSK 6 250+ nheeee",
+                "Năm nay pé sẽ đi được TQ nè, được học bổng toàn phần nè",
+                "Và sẽ gặp được anh lại nheeeeee, iuuuuuuuu!"
+            ],
+            currentMessageIndex: 0,
+            countdownValue: 5,
+            galleryStartTime: null,
+            imagePlanes: [],
+            galleryGroup: null,
+            imageZoomScale: 1.0,
+            targetZoomScale: 1.0,
+            globeMesh: null,
+            showIcons: true,
+            zoomSpeed: 0.0, // Continuous zoom speed (-1 to 1)
+            rotationPaused: false, // Whether gallery rotation is paused
+            pauseAndZoomActive: false, // Whether pause and zoom action is active
+            fireworks: [], // Firework array (new system)
+            fireworkParticles: [], // Firework particle system (for rendering)
+            imageCaptions: [], // Text captions for gallery images
+            galleryAutoRotate: true, // Auto-rotate gallery by default
+            galleryTouchZoom: true // Zoom in on touch/click
+        };
+
+        /**
+         * UI INTERACTION LOGIC (Collapse & Drag)
+         */
+        
+        // 1. Collapse UI
+        const btnCollapse = document.getElementById('btn-collapse');
+        const uiLayer = document.getElementById('ui-layer');
+        btnCollapse.addEventListener('click', () => {
+            uiLayer.classList.toggle('collapsed');
+            btnCollapse.innerText = uiLayer.classList.contains('collapsed') ? '+' : '−';
+        });
+
+        // 2. Drag Camera
+        const camWrapper = document.getElementById('camera-wrapper');
+        const camHandle = document.getElementById('camera-handle');
+        let isDragging = false;
+        let dragOffset = { x: 0, y: 0 };
+
+        camHandle.addEventListener('mousedown', (e) => {
+            if (state.voiceModeActive) return; // Disable drag in full screen
+            isDragging = true;
+            const rect = camWrapper.getBoundingClientRect();
+            dragOffset.x = e.clientX - rect.left;
+            dragOffset.y = e.clientY - rect.top;
+            
+            // Switch from bottom/right positioning to top/left for dragging logic
+            camWrapper.style.bottom = 'auto';
+            camWrapper.style.right = 'auto';
+            camWrapper.style.left = rect.left + 'px';
+            camWrapper.style.top = rect.top + 'px';
+        });
+
+        window.addEventListener('mousemove', (e) => {
+            if (isDragging) {
+                camWrapper.style.left = (e.clientX - dragOffset.x) + 'px';
+                camWrapper.style.top = (e.clientY - dragOffset.y) + 'px';
+            }
+        });
+
+        window.addEventListener('mouseup', () => {
+            isDragging = false;
+        });
+
+
+        /**
+         * THREE.JS SETUP
+         */
+        const container = document.getElementById('canvas-container');
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x050505);
+        scene.fog = new THREE.FogExp2(0x050505, 0.012);
+
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.z = CONFIG.camZ;
+
+        const vFOV = THREE.MathUtils.degToRad(camera.fov);
+        const heightAtZero = 2 * Math.tan(vFOV / 2) * camera.position.z;
+        const widthAtZero = heightAtZero * camera.aspect;
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(window.devicePixelRatio);
+        container.appendChild(renderer.domElement);
+
+        const controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+        controls.autoRotate = false; 
+        controls.enableZoom = false;
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        /**
+         * PARTICLE SYSTEM & TEXT GENERATION
+         */
+        
+        // Dynamic Text Generator (Reuse for Voice)
+        function generateTextCoordinates(text, step = 2, scaleOverride = null) {
+            console.log(`Generating text coords for: "${text}"`);
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            const width = 3000; 
+            const height = 800;
+            canvas.width = width;
+            canvas.height = height;
+
+            ctx.fillStyle = 'black';
+            ctx.fillRect(0, 0, width, height);
+            ctx.fillStyle = 'white';
+            ctx.font = '400 100px "Segoe UI", Tahoma, Geneva, Verdana, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(text, width / 2, height / 2);
+
+            const imageData = ctx.getImageData(0, 0, width, height);
+            const data = imageData.data;
+            const coords = [];
+
+            const finalScale = scaleOverride || CONFIG.textScale;
+
+            for (let y = 0; y < height; y += step) { 
+                for (let x = 0; x < width; x += step) {
+                    const i = (y * width + x) * 4;
+                    if (data[i] > 128) {
+                        const pX = (x - width / 2) * finalScale;
+                        const pY = -(y - height / 2) * finalScale;
+                        coords.push(new THREE.Vector3(pX, pY, 0));
+                    }
+                }
+            }
+            console.log(`Generated ${coords.length} points for "${text}"`);
+            return coords;
+        }
+
+        const coordsText1 = generateTextCoordinates(CONFIG.text1, 3); 
+        const coordsText2 = generateTextCoordinates(CONFIG.text2, 3);
+        const coordsText3 = generateTextCoordinates(CONFIG.text3, 3);
+        const coordsText4 = generateTextCoordinates(CONFIG.text4, 3); 
+        let coordsText5 = generateTextCoordinates("HELLO", 2); 
+
+        const particleGeometry = new THREE.BufferGeometry();
+        const positions = new Float32Array(CONFIG.particleCount * 3);
+        const colors = new Float32Array(CONFIG.particleCount * 3);
+        
+        const posScatter = [];
+        const posText1 = [];
+        const posText2 = [];
+        const posText3 = [];
+        const posText4 = [];
+        const posText5 = [];
+
+        function fillPosArray(targetArray, sourceCoords) {
+            targetArray.length = 0; 
+            const depth = 2.0;
+            const noise = 0.2;
+            for (let i = 0; i < CONFIG.particleCount; i++) {
+                if (sourceCoords.length === 0) {
+                     targetArray.push(new THREE.Vector3(0,0,0));
+                     continue;
+                }
+                const index = Math.floor(Math.random() * sourceCoords.length);
+                const p = sourceCoords[index];
+                targetArray.push(new THREE.Vector3(
+                    p.x + (Math.random() - 0.5) * noise,
+                    p.y + (Math.random() - 0.5) * noise,
+                    p.z + (Math.random() - 0.5) * depth
+                ));
+            }
+        }
+
+        for (let i = 0; i < CONFIG.particleCount; i++) {
+            const theta = Math.random() * Math.PI * 2;
+            const phi = Math.acos(Math.random() * 2 - 1);
+            const r = Math.cbrt(Math.random()) * CONFIG.scatterRadius; 
+            const x = r * Math.sin(phi) * Math.cos(theta);
+            const y = r * Math.sin(phi) * Math.sin(theta);
+            const z = r * Math.cos(phi);
+            positions[i * 3] = x;
+            positions[i * 3 + 1] = y;
+            positions[i * 3 + 2] = z;
+            colors[i * 3] = 1; colors[i * 3 + 1] = 1; colors[i * 3 + 2] = 1;
+            posScatter.push(new THREE.Vector3(x, y, z));
+        }
+
+        fillPosArray(posText1, coordsText1);
+        fillPosArray(posText2, coordsText2);
+        fillPosArray(posText3, coordsText3);
+        fillPosArray(posText4, coordsText4);
+        fillPosArray(posText5, coordsText5); 
+
+        particleGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        particleGeometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+        const particleMaterial = new THREE.PointsMaterial({
+            vertexColors: true,
+            size: CONFIG.particleSize,
+            transparent: true,
+            opacity: 0.9,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false,
+            sizeAttenuation: true
+        });
+
+        const particleSystem = new THREE.Points(particleGeometry, particleMaterial);
+        scene.add(particleSystem);
+
+        /**
+         * BIRTHDAY ICONS/STICKERS - Floating around text
+         */
+        const birthdayIcons = [];
+        const iconTypes = ['🎂', '🎁', '🎈', '🎉', '⭐', '🎊', '🍰', '🎀'];
+        
+        function createBirthdayIcon(type, index, total) {
+            // Create canvas for sprite
+            const canvas = document.createElement('canvas');
+            canvas.width = 256;
+            canvas.height = 256;
+            const ctx = canvas.getContext('2d');
+            
+            // No background circle - just emoji/text
+            // Draw emoji/text
+            ctx.font = '120px Arial';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(type, 128, 128);
+            
+            // Create texture from canvas
+            const texture = new THREE.CanvasTexture(canvas);
+            texture.needsUpdate = true;
+            
+            // Create sprite material
+            const spriteMaterial = new THREE.SpriteMaterial({
+                map: texture,
+                transparent: true,
+                opacity: 0.9,
+                blending: THREE.AdditiveBlending,
+                color: new THREE.Color(0xffffff)
+            });
+            
+            // Create sprite (reduced size)
+            const sprite = new THREE.Sprite(spriteMaterial);
+            sprite.scale.set(6, 6, 1); // Reduced by 3/5 (was 10, now 6)
+            
+            // Set initial position randomly distributed in 3D space (more scattered, not just center)
+            // Much wider spread across the entire view
+            const baseX = (Math.random() - 0.5) * 40; // Spread from -20 to +20 (much wider)
+            const baseY = (Math.random() - 0.5) * 30; // Vertical spread (wider)
+            const baseZ = (Math.random() - 0.5) * 40; // Depth spread (wider)
+            
+            sprite.userData = {
+                baseX: baseX, // Stable X position
+                baseZ: baseZ, // Stable Z position
+                baseY: baseY, // Stable Y position
+                targetPosition: new THREE.Vector3(),
+                currentPosition: new THREE.Vector3(),
+                baseScale: 6.0, // Reduced by 3/5 (was 10.0, now 6.0)
+                targetScale: 6.0, // For zoom on touch
+                floatOffsetX: (Math.random() - 0.5) * 4, // Larger float offset (more movement)
+                floatOffsetY: (Math.random() - 0.5) * 4,
+                floatOffsetZ: (Math.random() - 0.5) * 4,
+                floatSpeed: 0.3 + Math.random() * 0.4, // Random float speed
+                floatTime: Math.random() * Math.PI * 2 // Random phase
+            };
+            
+            return sprite;
+        }
+        
+        // Create birthday icons group
+        const birthdayIconsGroup = new THREE.Group();
+        const iconCount = 22; // Number of floating icons (20 + 2 more)
+        
+        // Add more icon types
+        const extendedIconTypes = ['🎂', '🎁', '🎈', '🎉', '⭐', '🎊', '🍰', '🎀', '🎪', '🎭', '🎨', '🎵', '🎤', '🎬', '🎯', '🎲', '🎮', '🎸', '🎺', '🎻'];
+        
+        for (let i = 0; i < iconCount; i++) {
+            const iconType = extendedIconTypes[i % extendedIconTypes.length];
+            const icon = createBirthdayIcon(iconType, i, iconCount);
+            birthdayIcons.push(icon);
+            birthdayIconsGroup.add(icon);
+        }
+        
+        scene.add(birthdayIconsGroup);
+
+        /**
+         * FIREWORK EFFECT SYSTEM (New Implementation)
+         */
+        function createFirework(x, y, z) {
+            const particles = [];
+            const count = 80;
+            const color = new THREE.Color().setHSL(Math.random(), 1, 0.5);
+
+            for (let i = 0; i < count; i++) {
+                const particle = {
+                    position: new THREE.Vector3(x, y, z),
+                    velocity: new THREE.Vector3(
+                        (Math.random() - 0.5) * 0.3,
+                        (Math.random() - 0.5) * 0.3,
+                        (Math.random() - 0.5) * 0.3
+                    ),
+                    life: 1.0
+                };
+                particles.push(particle);
+            }
+
+            sequenceState.fireworks.push({ particles, color });
+        }
+        
+        function triggerFireworks() {
+            console.log('🎆 Triggering fireworks!');
+            
+            // Create multiple firework bursts at different positions around text center
+            const burstCount = 8;
+            for (let b = 0; b < burstCount; b++) {
+                setTimeout(() => {
+                    // Random burst position around text center
+                    const x = (Math.random() - 0.5) * 20;
+                    const y = (Math.random() - 0.5) * 15 + 2; // Slightly above center
+                    const z = (Math.random() - 0.5) * 20;
+                    createFirework(x, y, z);
+                }, b * 200); // Stagger bursts
+            }
+        }
+
+        function updateDynamicText(text) {
+            const length = Math.max(text.length, 3);
+            let optimalScale = 0.09; 
+            if (length > 4) {
+                optimalScale = 0.4 / length; 
+            }
+            optimalScale = Math.max(0.035, optimalScale);
+
+            const newCoords = generateTextCoordinates(text, 2, optimalScale);
+            fillPosArray(posText5, newCoords);
+        }
+
+        /**
+         * SYSTEM 3: Galaxy Background 
+         */
+        const galaxyCount = 8000; 
+        const galaxyGeo = new THREE.BufferGeometry();
+        const galaxyPos = new Float32Array(galaxyCount * 3);
+        const galaxyColors = new Float32Array(galaxyCount * 3);
+        
+        for(let i=0; i<galaxyCount; i++) {
+            const r = 20 + Math.random() * 60; 
+            const theta = Math.random() * Math.PI * 2;
+            const phi = Math.acos(Math.random() * 2 - 1);
+            
+            galaxyPos[i*3] = r * Math.sin(phi) * Math.cos(theta);
+            galaxyPos[i*3+1] = r * Math.sin(phi) * Math.sin(theta);
+            galaxyPos[i*3+2] = r * Math.cos(phi);
+
+            const c = new THREE.Color();
+            const rand = Math.random();
+            if(rand < 0.3) c.setHex(0x00ffff); 
+            else if (rand < 0.6) c.setHex(0x0000ff); 
+            else if (rand < 0.8) c.setHex(0x4b0082); 
+            else c.setHex(0xffffff); 
+
+            c.multiplyScalar(0.5 + Math.random() * 0.5);
+
+            galaxyColors[i*3] = c.r;
+            galaxyColors[i*3+1] = c.g;
+            galaxyColors[i*3+2] = c.b;
+        }
+        
+        galaxyGeo.setAttribute('position', new THREE.BufferAttribute(galaxyPos, 3));
+        galaxyGeo.setAttribute('color', new THREE.BufferAttribute(galaxyColors, 3));
+        
+        const galaxyMaterial = new THREE.PointsMaterial({
+            vertexColors: true,
+            size: 0.04, 
+            transparent: true,
+            opacity: 0, 
+            blending: THREE.AdditiveBlending,
+            depthWrite: false
+        });
+        
+        const galaxySystem = new THREE.Points(galaxyGeo, galaxyMaterial);
+        scene.add(galaxySystem);
+
+
+        /**
+         * VOICE RECOGNITION
+         */
+        const voiceBtn = document.getElementById('btn-voice');
+        const voiceIndicator = document.getElementById('voice-indicator');
+        const voiceBtnText = document.getElementById('voice-btn-text');
+
+        let recognition = null;
+
+        if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            recognition = new SpeechRecognition();
+            recognition.continuous = true;
+            recognition.interimResults = false;
+            recognition.lang = 'en-US';
+
+            recognition.onstart = () => {
+                console.log("Voice recognition started");
+                voiceIndicator.classList.add('listening');
+                voiceBtnText.innerText = "Voice Mode: ON";
+                voiceBtn.classList.add('active');
+            };
+
+            recognition.onerror = (event) => {
+                console.error("Voice recognition error", event.error);
+                if (event.error === 'not-allowed') {
+                    alert("Microphone access denied. Please allow microphone access.");
+                    state.voiceEnabledByUser = false;
+                }
+                voiceIndicator.classList.remove('listening');
+            };
+
+            recognition.onend = () => {
+                console.log("Voice recognition ended");
+                voiceIndicator.classList.remove('listening');
+                if (state.voiceEnabledByUser) {
+                    // Add a small delay before restarting to avoid rapid loops
+                    setTimeout(() => {
+                        try { recognition.start(); } catch(e) { console.warn("Restart failed", e); }
+                    }, 300);
+                } else {
+                    voiceBtnText.innerText = "Enable Voice Mode";
+                    voiceBtn.classList.remove('active');
+                }
+            };
+
+            recognition.onresult = (event) => {
+                if (!state.voiceEnabledByUser) return;
+
+                const last = event.results.length - 1;
+                const transcript = event.results[last][0].transcript.trim().toUpperCase();
+                
+                const words = transcript.split(' ');
+                const displayPhrase = words.slice(-3).join(' ');
+
+                if (displayPhrase.length > 0) {
+                    updateDynamicText(displayPhrase);
+                    state.targetGestureLabel = "Voice: " + displayPhrase;
+                    state.targetWeights = [0, 0, 0, 0, 1];
+                    state.spreadTarget = 0.0; 
+                }
+            };
+        } else {
+            voiceBtnText.innerText = "Voice Not Supported";
+            voiceBtn.disabled = true;
+        }
+
+        voiceBtn.addEventListener('click', () => {
+            if (!recognition) return;
+
+            state.voiceEnabledByUser = !state.voiceEnabledByUser;
+            
+            if (state.voiceEnabledByUser) {
+                try {
+                    recognition.start();
+                    state.voiceModeActive = true;
+                    state.targetGestureLabel = "Listening...";
+                    state.spreadTarget = 0.0; 
+                    state.targetWeights = [0, 0, 0, 0, 1]; 
+                    
+                    updateDynamicText("HELLO");
+                } catch(e) { console.warn(e); }
+            } else {
+                recognition.stop();
+                state.voiceModeActive = false;
+                state.targetGestureLabel = "Voice Mode OFF";
+                state.spreadTarget = 1.0;
+            }
+        });
+
+
+        /**
+         * HAND TRACKING & INTERACTION
+         */
+        const videoElement = document.getElementById('webcam-preview');
+        const uiGesture = document.getElementById('gesture-val');
+        const uiFingers = document.getElementById('finger-val');
+        const loading = document.getElementById('loading');
+
+        function onResults(results) {
+            loading.style.display = 'none';
+
+            let detectedGesture = 0; 
+            let fCount = 0;
+            let openness = 1.0;
+            let isPinching = false;
+            let pinchDistance = 1.0;
+
+            state.handPositions = []; 
+
+            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                state.isHandDetected = true;
+                
+                for (const landmarks of results.multiHandLandmarks) {
+                    const palmX = 1.0 - landmarks[9].x; 
+                    const palmY = landmarks[9].y;
+                    const hPos = new THREE.Vector3(
+                        (palmX - 0.5) * widthAtZero,
+                        -(palmY - 0.5) * heightAtZero,
+                        0
+                    );
+                    state.handPositions.push(hPos);
+                }
+
+                const landmarks = results.multiHandLandmarks[0];
+                const handedness = results.multiHandedness[0].label;
+                
+                const wrist = landmarks[0];
+                state.handPositionRaw.x = 1.0 - wrist.x; 
+                state.handPositionRaw.y = wrist.y;
+
+                fCount = countFingers(landmarks, handedness);
+                openness = getHandOpenness(landmarks);
+                
+                // Detect pinch gesture (thumb and index finger close together)
+                const thumbTip = landmarks[4];
+                const indexTip = landmarks[8];
+                pinchDistance = Math.hypot(thumbTip.x - indexTip.x, thumbTip.y - indexTip.y);
+                isPinching = pinchDistance < 0.05; // Threshold for pinch detection
+
+                // During birthday sequence, ignore hand gestures and keep sequence control
+                if (sequenceState.isActive && sequenceState.phase !== 'gallery') {
+                    // Sequence controls the particles, ignore hand gestures
+                    state.galaxyEffectActive = false;
+                } else if (state.voiceEnabledByUser) {
+                    state.targetWeights = [0, 0, 0, 0, 1];
+                    state.spreadTarget = 0.0; 
+                    state.galaxyEffectActive = false; 
+                } else {
+                    if (fCount === 1) detectedGesture = 1;
+                    else if (fCount === 2) detectedGesture = 2;
+                    else if (fCount === 3) detectedGesture = 3;
+                    // Removed gesture 4 (I LOVE YOU)
+
+                    if (detectedGesture > 0) {
+                        // Gallery zoom control with gestures 1 and 2
+                        if (sequenceState.phase === 'gallery' && sequenceState.imagePlanes.length > 0) {
+                            if (detectedGesture === 1) {
+                                // Gesture 1 (1 finger) = Zoom In (continuous)
+                                sequenceState.zoomSpeed = 1.5; // Zoom in speed
+                                state.targetGestureLabel = `Zoom In: ${(sequenceState.targetZoomScale * 100).toFixed(0)}%`;
+                            } else if (detectedGesture === 2) {
+                                // Gesture 2 (2 fingers) = Zoom Out (continuous)
+                                sequenceState.zoomSpeed = -1.5; // Zoom out speed
+                                state.targetGestureLabel = `Zoom Out: ${(sequenceState.targetZoomScale * 100).toFixed(0)}%`;
+                            } else if (detectedGesture === 3) {
+                                // Gesture 3 (3 fingers) = Stop rotation and zoom in
+                                sequenceState.rotationPaused = true;
+                                sequenceState.pauseAndZoomActive = true;
+                                sequenceState.zoomSpeed = 1.5; // Zoom in while paused
+                                state.targetGestureLabel = "Paused & Zooming In";
+                            } else {
+                                // Other gestures - show globe if available
+                                sequenceState.zoomSpeed = 0.0; // Stop zooming
+                                sequenceState.rotationPaused = false;
+                                sequenceState.pauseAndZoomActive = false;
+                                if (sequenceState.globeMesh) {
+                                    state.targetGestureLabel = "Globe (Interactive)";
+                                } else {
+                                    state.targetGestureLabel = getLabel(detectedGesture);
+                                }
+                            }
+                            state.spreadTarget = 1.0; // Keep particles scattered
+                            state.targetWeights = [0, 0, 0, 0, 0];
+                        } else {
+                            sequenceState.zoomSpeed = 0.0; // Stop zooming outside gallery
+                            // Outside gallery - normal gesture behavior
+                            state.targetGestureLabel = getLabel(detectedGesture);
+                            state.spreadTarget = 0.0;
+                            state.targetWeights = getWeights(detectedGesture);
+                        }
+                        state.galaxyEffectActive = false;
+                    } else {
+                        // No gesture detected
+                        if (sequenceState.phase === 'gallery' && sequenceState.imagePlanes.length > 0) {
+                            // Stop zooming when no gesture, resume rotation
+                            sequenceState.zoomSpeed = 0.0;
+                            sequenceState.rotationPaused = false;
+                            sequenceState.pauseAndZoomActive = false;
+                            state.targetGestureLabel = "Gallery (1=Zoom In, 2=Zoom Out, 3=Pause & Zoom)";
+                            state.spreadTarget = 1.0;
+                        } else {
+                            sequenceState.zoomSpeed = 0.0;
+                            // Normal gesture control outside gallery
+                            if (fCount === 0) {
+                                state.targetGestureLabel = "Fist (Contract)";
+                                state.spreadTarget = 1.0;
+                                const minScale = 0.1;
+                                const maxScale = 1.5;
+                                state.scatterScaleTarget = minScale + openness * (maxScale - minScale);
+                            } else {
+                                state.targetGestureLabel = "Scatter (Expand)";
+                                state.spreadTarget = 1.0;
+                                const minScale = 0.1;
+                                const maxScale = 1.5;
+                                state.scatterScaleTarget = minScale + openness * (maxScale - minScale);
+                            }
+                        }
+                        state.galaxyEffectActive = false;
+                    }
+                }
+
+                state.fingerCount = fCount;
+
+            } else {
+                state.isHandDetected = false;
+
+                // During birthday sequence, don't override particle state
+                if (sequenceState.isActive && sequenceState.phase !== 'gallery') {
+                    // Keep hand position centered but don't change particle state
+                    state.handPositionRaw.x = 0.5;
+                    state.handPositionRaw.y = 0.5;
+                } else if (state.voiceEnabledByUser) {
+                    state.spreadTarget = 0.0;
+                    state.targetWeights = [0, 0, 0, 0, 1];
+                    state.handPositionRaw.x = 0.5;
+                    state.handPositionRaw.y = 0.5;
+                } else {
+                    state.spreadTarget = 1.0;
+                    state.targetGestureLabel = "Waiting...";
+                    state.scatterScaleTarget = 1.0;
+                    // Stop zooming when no hand detected
+                    sequenceState.zoomSpeed = 0.0;
+                    // In gallery, keep current zoom; otherwise reset
+                    if (sequenceState.phase !== 'gallery') {
+                        sequenceState.targetZoomScale = 1.0;
+                    }
+                    state.handPositionRaw.x = 0.5;
+                    state.handPositionRaw.y = 0.5;
+                }
+                
+                state.fingerCount = 0;
+                state.galaxyEffectActive = false;
+            }
+
+            updateUI();
+        }
+
+        function getLabel(g) {
+            if(g===1) return CONFIG.text1;
+            if(g===2) return CONFIG.text2;
+            if(g===3) return CONFIG.text3;
+            if(g===4) return "I LOVE YOU";
+            return "";
+        }
+
+        function getWeights(g) {
+            if(g===1) return [1,0,0,0,0];
+            if(g===2) return [0,1,0,0,0];
+            if(g===3) return [0,0,1,0,0];
+            // Removed gesture 4 (I LOVE YOU)
+            return state.targetWeights; 
+        }
+
+        function getHandOpenness(landmarks) {
+            const wrist = landmarks[0];
+            const tips = [8, 12, 16, 20];
+            const mcps = [5, 9, 13, 17];
+            let distTips = 0, distMcps = 0;
+            for(let i=0; i<4; i++){
+                distTips += Math.hypot(landmarks[tips[i]].x - wrist.x, landmarks[tips[i]].y - wrist.y);
+                distMcps += Math.hypot(landmarks[mcps[i]].x - wrist.x, landmarks[mcps[i]].y - wrist.y);
+            }
+            const ratio = distTips / distMcps;
+            return Math.max(0, Math.min(1, (ratio - 1.0) / 1.2));
+        }
+
+        function countFingers(landmarks, handedness) {
+            let count = 0;
+            const fingerTips = [8, 12, 16, 20];
+            const fingerPips = [6, 10, 14, 18];
+            for (let i = 0; i < 4; i++) {
+                if (landmarks[fingerTips[i]].y < landmarks[fingerPips[i]].y) count++;
+            }
+            const thumbTip = landmarks[4];
+            const thumbIp = landmarks[3];
+            const isRightHand = handedness === 'Right';
+            if (isRightHand) {
+                if (thumbTip.x < thumbIp.x) count++;
+            } else {
+                if (thumbTip.x > thumbIp.x) count++;
+            }
+            return count;
+        }
+
+        function updateUI() {
+            uiGesture.innerText = state.targetGestureLabel;
+            uiFingers.innerText = state.fingerCount;
+        }
+
+        const hands = new Hands({locateFile: (file) => {
+            return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+        }});
+
+        hands.setOptions({
+            maxNumHands: 2, 
+            modelComplexity: 1,
+            minDetectionConfidence: 0.5,
+            minTrackingConfidence: 0.5
+        });
+
+        hands.onResults(onResults);
+
+        const cameraFeed = new Camera(videoElement, {
+            onFrame: async () => {
+                await hands.send({image: videoElement});
+            },
+            width: 1280,
+            height: 720
+        });
+        
+        async function startCamera() {
+            try {
+                loading.innerHTML = "Requesting Camera Access...";
+                // Check if browser supports getUserMedia
+                if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                    throw new Error("Browser API 'navigator.mediaDevices.getUserMedia' not available");
+                }
+
+                // Explicitly request permission first to debug
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                // Stop the stream immediately, we just wanted to check permission/availability
+                stream.getTracks().forEach(track => track.stop());
+                
+                loading.innerHTML = "Starting MediaPipe Camera...";
+                await cameraFeed.start();
+            } catch (err) {
+                console.error("Camera Error:", err);
+                loading.innerHTML = `Camera not found (${err.name}).<br>Switching to <b>Mouse Interaction Mode</b>.`;
+                setTimeout(() => {
+                    loading.style.display = 'none';
+                    activateMouseMode();
+                }, 2500);
+            }
+        }
+
+        let isMouseMode = false;
+        function activateMouseMode() {
+            isMouseMode = true;
+            state.isHandDetected = true; // Always "detect" hand in mouse mode
+            
+            // Keep camera wrapper visible but indicate no signal
+            const camWrapper = document.getElementById('camera-wrapper');
+            camWrapper.style.display = 'flex'; // Ensure it's visible
+            camWrapper.style.justifyContent = 'center';
+            camWrapper.style.alignItems = 'center';
+            camWrapper.style.background = 'rgba(20, 20, 20, 0.8)';
+            camWrapper.style.border = '1px solid #444';
+            
+            const video = document.getElementById('webcam-preview');
+            video.style.opacity = '0.1'; // Dim the broken video element
+            
+            // Add a placeholder text if not exists
+            if (!document.getElementById('no-cam-msg')) {
+                const msg = document.createElement('div');
+                msg.id = 'no-cam-msg';
+                msg.innerHTML = "NO CAMERA<br>Mouse Mode";
+                msg.style.color = '#aaa';
+                msg.style.textAlign = 'center';
+                msg.style.fontSize = '12px';
+                msg.style.position = 'absolute';
+                camWrapper.appendChild(msg);
+            }
+
+            // Start sequence in mouse mode too
+            if (!sequenceState.isActive) {
+                setTimeout(() => {
+                    console.log('Starting birthday sequence (mouse mode)...');
+                    startBirthdaySequence();
+                }, 1000);
+            }
+            
+            // Add mouse listener for interaction
+            window.addEventListener('mousemove', (event) => {
+                // Map mouse to 3D world coordinates on z=0 plane
+                const vec = new THREE.Vector3();
+                const pos = new THREE.Vector3();
+                
+                vec.set(
+                    (event.clientX / window.innerWidth) * 2 - 1,
+                    -(event.clientY / window.innerHeight) * 2 + 1,
+                    0.5
+                );
+                
+                vec.unproject(camera);
+                vec.sub(camera.position).normalize();
+                
+                const distance = -camera.position.z / vec.z;
+                pos.copy(camera.position).add(vec.multiplyScalar(distance));
+                
+                state.handPositions = [pos];
+                
+                // Map mouse X to rotation
+                state.handPositionRaw.x = event.clientX / window.innerWidth;
+                state.handPositionRaw.y = event.clientY / window.innerHeight;
+            });
+
+            // Add click listener to cycle gestures
+            let gestureIndex = 0;
+            window.addEventListener('click', () => {
+                if (state.voiceModeActive) return;
+                
+                gestureIndex = (gestureIndex + 1) % 5; // 0 to 4
+                const g = gestureIndex;
+                
+                if (g === 0) {
+                    state.targetGestureLabel = "Mouse Click: Scatter";
+                    state.spreadTarget = 1.0;
+                    state.galaxyEffectActive = false;
+                } else {
+                    state.targetGestureLabel = "Mouse Click: " + getLabel(g);
+                    state.spreadTarget = 0.0;
+                    state.targetWeights = getWeights(g);
+                    state.galaxyEffectActive = (g === 4);
+                }
+                updateUI();
+            });
+            
+            // Update UI instructions
+            const uiContent = document.getElementById('ui-content');
+            const helpText = uiContent.querySelector('div[style*="font-size: 11px"]');
+            if(helpText) {
+                helpText.innerHTML = `
+                    <b>Mouse Mode Active:</b><br>
+                    🖱️ Move mouse to interact<br>
+                    🖱️ Click to cycle gestures<br>
+                    (I -> LOVE -> YOU -> ...)<br>
+                    <br>
+                    <b>Voice Mode:</b><br>
+                    🎤 Still works if Mic is available
+                `;
+            }
+        }
+
+        startCamera();
+
+        /**
+         * BACKGROUND MUSIC
+         */
+        const backgroundMusic = document.getElementById('background-music');
+        let musicStarted = false;
+
+        function startBackgroundMusic() {
+            if (musicStarted) return;
+            
+            backgroundMusic.volume = 0.5; // Set volume to 50%
+            const playPromise = backgroundMusic.play();
+            
+            if (playPromise !== undefined) {
+                playPromise.then(() => {
+                    console.log('Background music started');
+                    musicStarted = true;
+                }).catch(error => {
+                    console.log('Autoplay prevented, will play on user interaction:', error);
+                    // Try to play on first user interaction
+                    const playOnInteraction = () => {
+                        backgroundMusic.play().then(() => {
+                            console.log('Background music started on user interaction');
+                            musicStarted = true;
+                        }).catch(err => {
+                            console.warn('Failed to play music:', err);
+                        });
+                        document.removeEventListener('click', playOnInteraction);
+                        document.removeEventListener('touchstart', playOnInteraction);
+                    };
+                    document.addEventListener('click', playOnInteraction);
+                    document.addEventListener('touchstart', playOnInteraction);
+                });
+            }
+        }
+
+        // Start music when page loads
+        startBackgroundMusic();
+
+        /**
+         * BIRTHDAY SEQUENCE CONTROLLER
+         */
+        function startBirthdaySequence() {
+            console.log('🎉 Starting birthday sequence!');
+            sequenceState.isActive = true;
+            sequenceState.startTime = Date.now();
+            sequenceState.phase = 'wait';
+            sequenceState.countdownValue = 5;
+            sequenceState.currentMessageIndex = 0;
+
+            // Auto-enable AR mode
+            state.voiceModeActive = true;
+            state.wasVoiceModeActive = true;
+            camWrapper.classList.add('fullscreen');
+            if (!isMouseMode) {
+                scene.background = null;
+            } else {
+                scene.background = new THREE.Color(0x050505);
+            }
+            camWrapper.style.top = '';
+            camWrapper.style.left = '';
+            camWrapper.style.bottom = '';
+            camWrapper.style.right = '';
+
+            // Set initial scatter state
+            state.spreadTarget = 1.0;
+            state.targetWeights = [0, 0, 0, 0, 0];
+
+            // Hide UI during sequence (optional - can be toggled)
+            // uiLayer.style.opacity = '0.3';
+            
+            console.log('Sequence started, phase:', sequenceState.phase);
+        }
+
+        function updateBirthdaySequence() {
+            if (!sequenceState.isActive || !sequenceState.startTime) {
+                return;
+            }
+
+            const elapsed = (Date.now() - sequenceState.startTime) / 1000; // seconds
+
+            if (sequenceState.phase === 'wait') {
+                // Wait 5 seconds - hide icons during wait
+                birthdayIconsGroup.visible = false;
+                if (elapsed >= 5) {
+                    console.log('Starting countdown...');
+                    sequenceState.phase = 'countdown';
+                    sequenceState.countdownValue = 5;
+                    state.spreadTarget = 0.0;
+                    state.targetWeights = [0, 0, 0, 0, 1];
+                    updateDynamicText("5");
+                    birthdayIconsGroup.visible = true; // Show icons during countdown
+                }
+            } else if (sequenceState.phase === 'countdown') {
+                // Countdown from 5 to 1 (5 seconds total, ~1 second per number)
+                const countdownElapsed = elapsed - 5;
+                const newCountdownValue = Math.max(1, Math.ceil(5 - countdownElapsed));
+                
+                if (newCountdownValue !== sequenceState.countdownValue) {
+                    sequenceState.countdownValue = newCountdownValue;
+                    if (newCountdownValue > 0) {
+                        updateDynamicText(newCountdownValue.toString());
+                    }
+                }
+
+                birthdayIconsGroup.visible = true; // Keep icons visible during countdown
+                if (elapsed >= 10) {
+                    console.log('Starting "Happy Birthday!" text...');
+                    sequenceState.phase = 'happyBirthday';
+                    updateDynamicText("Chúc mừng sinh nhật bé iu <3");
+                    birthdayIconsGroup.visible = true; // Show icons with text
+                    // Trigger firework effect for "Happy Birthday!" message
+                    triggerFireworks();
+                }
+            } else if (sequenceState.phase === 'happyBirthday') {
+                // Show "Happy Birthday!" for 5 seconds
+                const happyBirthdayElapsed = elapsed - 10;
+                
+                if (happyBirthdayElapsed >= 5) {
+                    // After 5 seconds, start text messages
+                    console.log('Starting text messages sequence...');
+                    sequenceState.phase = 'text';
+                    sequenceState.currentMessageIndex = 0;
+                    updateDynamicText(sequenceState.birthdayMessages[0]);
+                    birthdayIconsGroup.visible = true; // Keep icons visible during text
+                }
+            } else if (sequenceState.phase === 'text') {
+                // Display messages, each 10 seconds
+                const textElapsed = elapsed - 15; // 10 (countdown) + 5 (happy birthday)
+                const messageIndex = Math.floor(textElapsed / 10);
+                
+                if (messageIndex < sequenceState.birthdayMessages.length) {
+                    if (messageIndex !== sequenceState.currentMessageIndex) {
+                        console.log('Showing message:', messageIndex, sequenceState.birthdayMessages[messageIndex]);
+                        sequenceState.currentMessageIndex = messageIndex;
+                        updateDynamicText(sequenceState.birthdayMessages[messageIndex]);
+                    }
+                } else {
+                    // All messages shown, show gallery (final scene)
+                    console.log('Showing image gallery (final scene)...');
+                    sequenceState.phase = 'gallery';
+                    showImageGallery();
+                }
+            } else if (sequenceState.phase === 'gallery') {
+                // Gallery is the final scene - no time limit, stays indefinitely
+                // Gallery will remain active until user closes or navigates away
+                if (!sequenceState.galleryStartTime) {
+                    sequenceState.galleryStartTime = Date.now();
+                    console.log('Gallery started - no time limit');
+                }
+                // No automatic transition - gallery stays open
+            } else if (sequenceState.phase === 'final') {
+                // Final phase - sequence complete (not used anymore, gallery is final)
+                birthdayIconsGroup.visible = true; // Show icons
+            }
+        }
+
+        function showImageGallery() {
+            console.log('Creating 3D image gallery in AR space...');
+            
+            // Hide particles and icons during gallery
+            state.spreadTarget = 1.0;
+            state.targetWeights = [0, 0, 0, 0, 0];
+            birthdayIconsGroup.visible = false;
+            
+            // Create gallery group if not exists
+            if (!sequenceState.galleryGroup) {
+                sequenceState.galleryGroup = new THREE.Group();
+                scene.add(sequenceState.galleryGroup);
+            }
+            
+            // Clear existing images (frame groups)
+            sequenceState.imagePlanes.forEach(frameGroup => {
+                sequenceState.galleryGroup.remove(frameGroup);
+                // Dispose all materials and geometries in the frame group
+                frameGroup.children.forEach(child => {
+                    if (child.material) {
+                        if (child.material.map) child.material.map.dispose();
+                        child.material.dispose();
+                    }
+                    if (child.geometry) child.geometry.dispose();
+                });
+            });
+            sequenceState.imagePlanes = [];
+            
+            // List of all images from images/ folder
+            const imageFiles = [
+                'images/att.D7lCPg7q0wqoumIFzklIirDYdkrgUueMa1sWBNtkruI.jpg',
+                'images/att.Gd9C_OUnVXjcy1IUNQQEzS8X4cmnCTpF8p0RWE67WAs.jpg',
+                'images/att.Of_2c4W23OJ3Lg8DiZbvp5IoLE5o52ofw0EMvT0KxE0.jpg',
+                'images/att.sEfY01OvQrvH0hsUzjk7UOIqyAADwbCGEvGprK3j_i0.jpg',
+                'images/DSC00117.JPG',
+                'images/DSC00585.jpg',
+                'images/IMG_2340.JPG',
+                'images/IMG_4925.jpg',
+                'images/IMG_5013.jpg',
+                'images/MTB08726.jpg'
+            ];
+            
+            // Create image planes in a circle (farther away)
+            const imageCount = imageFiles.length;
+            const radius = 25; // Increased from 15 to 25 (farther away)
+            const loader = new THREE.TextureLoader();
+            
+            for (let i = 0; i < imageCount; i++) {
+                const angle = (i / imageCount) * Math.PI * 2;
+                const x = Math.cos(angle) * radius;
+                const z = Math.sin(angle) * radius;
+                const y = (i % 2 === 0 ? 3 : -3); // Alternate heights (slightly more spread)
+                
+                // Create frame group for image with beautiful frame
+                const frameGroup = new THREE.Group();
+                
+                const baseSize = 3.6;
+                const framePadding = 0.3;
+                
+                // Create frames first (will be resized when image loads)
+                const outerFrameGeometry = new THREE.PlaneGeometry(baseSize + framePadding * 2, baseSize + framePadding * 2);
+                const outerFrameMaterial = new THREE.MeshBasicMaterial({
+                    color: 0xffd700, // Gold
+                    side: THREE.DoubleSide,
+                    transparent: true,
+                    opacity: 0.85
+                });
+                const outerFrame = new THREE.Mesh(outerFrameGeometry, outerFrameMaterial);
+                
+                // Middle frame - white accent
+                const middleFrameGeometry = new THREE.PlaneGeometry(baseSize + framePadding * 1.4, baseSize + framePadding * 1.4);
+                const middleFrameMaterial = new THREE.MeshBasicMaterial({
+                    color: 0xffffff, // White
+                    side: THREE.DoubleSide,
+                    transparent: true,
+                    opacity: 0.7
+                });
+                const middleFrame = new THREE.Mesh(middleFrameGeometry, middleFrameMaterial);
+                
+                // Inner frame - black border
+                const innerFrameGeometry = new THREE.PlaneGeometry(baseSize + framePadding * 0.8, baseSize + framePadding * 0.8);
+                const innerFrameMaterial = new THREE.MeshBasicMaterial({
+                    color: 0x000000, // Black
+                    side: THREE.DoubleSide,
+                    transparent: true,
+                    opacity: 0.9
+                });
+                const innerFrame = new THREE.Mesh(innerFrameGeometry, innerFrameMaterial);
+                
+                // Create image plane (will be resized when texture loads)
+                const imageGeometry = new THREE.PlaneGeometry(baseSize, baseSize);
+                const imageMaterial = new THREE.MeshBasicMaterial({
+                    side: THREE.DoubleSide,
+                    transparent: true,
+                    opacity: 0.95
+                });
+                const imagePlane = new THREE.Mesh(imageGeometry, imageMaterial);
+                
+                // Load image to get its aspect ratio
+                loader.load(
+                    imageFiles[i],
+                    (loadedTexture) => {
+                        // Calculate aspect ratio from loaded texture
+                        const aspectRatio = loadedTexture.image.width / loadedTexture.image.height;
+                        let width = baseSize;
+                        let height = baseSize;
+                        
+                        // Adjust dimensions to maintain aspect ratio
+                        if (aspectRatio > 1) {
+                            // Landscape: width is larger
+                            height = baseSize / aspectRatio;
+                        } else {
+                            // Portrait: height is larger
+                            width = baseSize * aspectRatio;
+                        }
+                        
+                        // Update geometry to match aspect ratio
+                        imagePlane.geometry.dispose();
+                        imagePlane.geometry = new THREE.PlaneGeometry(width, height);
+                        
+                        // Update frame sizes to match image
+                        outerFrame.geometry.dispose();
+                        outerFrame.geometry = new THREE.PlaneGeometry(width + framePadding * 2, height + framePadding * 2);
+                        middleFrame.geometry.dispose();
+                        middleFrame.geometry = new THREE.PlaneGeometry(width + framePadding * 1.4, height + framePadding * 1.4);
+                        innerFrame.geometry.dispose();
+                        innerFrame.geometry = new THREE.PlaneGeometry(width + framePadding * 0.8, height + framePadding * 0.8);
+                        
+                        // Set texture after calculating aspect ratio
+                        imageMaterial.map = loadedTexture;
+                        imageMaterial.needsUpdate = true;
+                    },
+                    undefined,
+                    (error) => {
+                        console.warn('Failed to load image:', imageFiles[i], error);
+                    }
+                );
+                
+                // Position frame elements (layered)
+                outerFrame.position.z = -0.03;
+                middleFrame.position.z = -0.02;
+                innerFrame.position.z = -0.01;
+                imagePlane.position.z = 0;
+                
+                // Add to frame group
+                frameGroup.add(outerFrame);
+                frameGroup.add(middleFrame);
+                frameGroup.add(innerFrame);
+                frameGroup.add(imagePlane);
+                
+                frameGroup.position.set(x, y, z);
+                // Face center first, then rotate 180 degrees to face camera
+                frameGroup.lookAt(0, 0, 0); // Face center
+                frameGroup.rotateY(Math.PI); // Rotate 180 degrees to face camera (reverse direction)
+                frameGroup.userData.index = i;
+                frameGroup.userData.baseScale = 1.0;
+                frameGroup.userData.targetScale = 1.0; // For individual zoom
+                
+                sequenceState.galleryGroup.add(frameGroup);
+                sequenceState.imagePlanes.push(frameGroup);
+                
+                // Create AR interactive text caption for each image
+                createImageCaption(i, frameGroup, x, y, z);
+            }
+            
+            sequenceState.galleryStartTime = null;
+            sequenceState.imageZoomScale = 1.0;
+            sequenceState.targetZoomScale = 1.0;
+            sequenceState.zoomSpeed = 0.0;
+            sequenceState.rotationPaused = false;
+            sequenceState.pauseAndZoomActive = false;
+            
+            // Create interactive globe in the center
+            createGlobe();
+        }
+
+        function createImageCaption(imageIndex, frameGroup, x, y, z) {
+            // Caption texts for each image
+            const captions = [
+                "kkkkk",
+                "",
+                "Sinh nhật",
+                "",
+                "23 yay",
+                "",
+                "Iuiuuuuu",
+                "",
+                "<3",
+                ""
+            ];
+            
+            const captionText = captions[imageIndex % captions.length];
+            
+            // Generate text coordinates for caption
+            const captionCoords = generateTextCoordinates(captionText, 3, 0.02); // Smaller scale for captions
+            
+            // Create particle system for caption
+            const captionParticleCount = Math.min(5000, captionCoords.length * 10);
+            const captionGeometry = new THREE.BufferGeometry();
+            const captionPositions = new Float32Array(captionParticleCount * 3);
+            const captionColors = new Float32Array(captionParticleCount * 3);
+            
+            const captionPosArray = [];
+            const depth = 1.0;
+            const noise = 0.1;
+            
+            for (let i = 0; i < captionParticleCount; i++) {
+                if (captionCoords.length === 0) {
+                    captionPosArray.push(new THREE.Vector3(0, 0, 0));
+                    continue;
+                }
+                const index = Math.floor(Math.random() * captionCoords.length);
+                const p = captionCoords[index];
+                captionPosArray.push(new THREE.Vector3(
+                    p.x + (Math.random() - 0.5) * noise,
+                    p.y + (Math.random() - 0.5) * noise,
+                    p.z + (Math.random() - 0.5) * depth
+                ));
+            }
+            
+            for (let i = 0; i < captionParticleCount; i++) {
+                const pos = captionPosArray[i];
+                captionPositions[i * 3] = pos.x;
+                captionPositions[i * 3 + 1] = pos.y;
+                captionPositions[i * 3 + 2] = pos.z;
+                captionColors[i * 3] = 1;
+                captionColors[i * 3 + 1] = 1;
+                captionColors[i * 3 + 2] = 1;
+            }
+            
+            captionGeometry.setAttribute('position', new THREE.BufferAttribute(captionPositions, 3));
+            captionGeometry.setAttribute('color', new THREE.BufferAttribute(captionColors, 3));
+            
+            const captionMaterial = new THREE.PointsMaterial({
+                vertexColors: true,
+                size: 0.06,
+                transparent: true,
+                opacity: 0.8,
+                blending: THREE.AdditiveBlending,
+                depthWrite: false,
+                sizeAttenuation: true
+            });
+            
+            const captionSystem = new THREE.Points(captionGeometry, captionMaterial);
+            
+            // Position caption below the image (relative to frameGroup, will rotate with it)
+            captionSystem.position.set(0, -3, 0); // Relative to frameGroup
+            captionSystem.lookAt(0, 0, 0);
+            captionSystem.rotateY(Math.PI);
+            
+            captionSystem.userData = {
+                basePosition: new THREE.Vector3(0, -3, 0),
+                targetPosition: new THREE.Vector3(0, -3, 0),
+                currentPosition: new THREE.Vector3(0, -3, 0),
+                posArray: captionPosArray,
+                baseScale: 1.0,
+                targetScale: 1.0
+            };
+            
+            // Add caption to frameGroup so it rotates with the image
+            frameGroup.add(captionSystem);
+            sequenceState.imageCaptions.push(captionSystem);
+        }
+
+        function createGlobe() {
+            // Remove existing globe if any
+            if (sequenceState.globeMesh) {
+                if (sequenceState.galleryGroup) {
+                    sequenceState.galleryGroup.remove(sequenceState.globeMesh);
+                }
+                if (sequenceState.globeMesh.material.map) sequenceState.globeMesh.material.map.dispose();
+                sequenceState.globeMesh.material.dispose();
+                sequenceState.globeMesh.geometry.dispose();
+            }
+            
+            // Create sphere geometry
+            const geometry = new THREE.SphereGeometry(3, 32, 32);
+            
+            // Load earth texture
+            const loader = new THREE.TextureLoader();
+            const earthTexture = loader.load('https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/planets/earth_atmos_2048.jpg', 
+                (texture) => {
+                    texture.needsUpdate = true;
+                },
+                undefined,
+                (error) => {
+                    console.warn('Earth texture failed to load, using default:', error);
+                    // Fallback: create a simple colored globe
+                    const material = new THREE.MeshPhongMaterial({
+                        color: 0x4a90e2,
+                        emissive: 0x072534,
+                        shininess: 0.5,
+                        transparent: true,
+                        opacity: 0.9
+                    });
+                    if (sequenceState.globeMesh) {
+                        sequenceState.globeMesh.material = material;
+                    }
+                }
+            );
+            
+            // Create material with earth texture
+            const material = new THREE.MeshPhongMaterial({
+                map: earthTexture,
+                transparent: true,
+                opacity: 0.9,
+                shininess: 0.3
+            });
+            
+            // Create mesh
+            sequenceState.globeMesh = new THREE.Mesh(geometry, material);
+            sequenceState.globeMesh.position.set(0, 0, 0);
+            
+            // Add to gallery group
+            if (sequenceState.galleryGroup) {
+                sequenceState.galleryGroup.add(sequenceState.globeMesh);
+            }
+            
+            // Add ambient light for better visibility
+            if (!scene.getObjectByName('galleryAmbientLight')) {
+                const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+                ambientLight.name = 'galleryAmbientLight';
+                scene.add(ambientLight);
+            }
+            
+            // Add directional light for globe shading
+            if (!scene.getObjectByName('galleryDirectionalLight')) {
+                const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+                directionalLight.position.set(5, 5, 5);
+                directionalLight.name = 'galleryDirectionalLight';
+                scene.add(directionalLight);
+            }
+        }
+
+        function hideImageGallery() {
+            console.log('Hiding 3D image gallery...');
+            
+            // Show icons again after gallery
+            birthdayIconsGroup.visible = true;
+            
+            // Remove globe
+            if (sequenceState.globeMesh) {
+                if (sequenceState.galleryGroup) {
+                    sequenceState.galleryGroup.remove(sequenceState.globeMesh);
+                }
+                if (sequenceState.globeMesh.material.map) sequenceState.globeMesh.material.map.dispose();
+                sequenceState.globeMesh.material.dispose();
+                sequenceState.globeMesh.geometry.dispose();
+                sequenceState.globeMesh = null;
+            }
+            
+            // Remove gallery from scene
+            if (sequenceState.galleryGroup) {
+                sequenceState.imagePlanes.forEach(frameGroup => {
+                    // Dispose all materials and geometries in the frame group
+                    frameGroup.children.forEach(child => {
+                        if (child.material) {
+                            if (child.material.map) child.material.map.dispose();
+                            child.material.dispose();
+                        }
+                        if (child.geometry) child.geometry.dispose();
+                    });
+                });
+                
+                // Remove and dispose captions
+                sequenceState.imageCaptions.forEach(caption => {
+                    if (caption.geometry) caption.geometry.dispose();
+                    if (caption.material) caption.material.dispose();
+                });
+                sequenceState.imageCaptions = [];
+                
+                scene.remove(sequenceState.galleryGroup);
+                sequenceState.galleryGroup = null;
+                sequenceState.imagePlanes = [];
+            }
+        }
+
+
+        // Start sequence after camera is ready
+        // Wait for loading to complete or start after a delay
+        let sequenceStarted = false;
+        const originalOnResults = onResults;
+        onResults = function(results) {
+            originalOnResults(results);
+            if (!sequenceStarted) {
+                sequenceStarted = true;
+                // Start sequence after camera is ready (give it 2 seconds)
+                setTimeout(() => {
+                    console.log('Starting birthday sequence...');
+                    startBirthdaySequence();
+                }, 2000);
+            }
+        };
+
+        // Fallback: Start sequence even if camera doesn't initialize
+        setTimeout(() => {
+            if (!sequenceStarted) {
+                console.log('Starting birthday sequence (fallback)...');
+                sequenceStarted = true;
+                startBirthdaySequence();
+            }
+        }, 5000);
+
+        /**
+         * ANIMATION
+         */
+        function animate() {
+            requestAnimationFrame(animate);
+
+            // Update birthday sequence
+            updateBirthdaySequence();
+
+            // Update firework particles
+            if (sequenceState.fireworkParticles.length > 0) {
+                sequenceState.fireworkParticles = sequenceState.fireworkParticles.filter(particle => {
+                    const userData = particle.userData;
+                    userData.life -= userData.decay;
+                    
+                    if (userData.life <= 0) {
+                        scene.remove(particle);
+                        particle.geometry.dispose();
+                        particle.material.dispose();
+                        return false;
+                    }
+                    
+                    // Update position
+                    const positions = particle.geometry.attributes.position.array;
+                    positions[0] += userData.velocity.x;
+                    positions[1] += userData.velocity.y;
+                    positions[2] += userData.velocity.z;
+                    
+                    // Apply gravity (less strong for better visibility)
+                    userData.velocity.y -= 0.005;
+                    
+                    // Fade out with smooth curve
+                    particle.material.opacity = Math.pow(userData.life, 1.5);
+                    
+                    // Scale down as it fades
+                    const scale = 0.5 + userData.life * 0.5;
+                    particle.material.size = 0.8 * scale;
+                    
+                    particle.geometry.attributes.position.needsUpdate = true;
+                    return true;
+                });
+            }
+
+            // Handle AR Mode Transition
+            if (state.voiceModeActive !== state.wasVoiceModeActive) {
+                if (state.voiceModeActive) {
+                    camWrapper.classList.add('fullscreen');
+                    // Only make background transparent if camera is actually working/visible
+                    if (!isMouseMode) {
+                        scene.background = null; 
+                    } else {
+                        scene.background = new THREE.Color(0x050505);
+                    }
+                    
+                    // Reset position when entering fullscreen to ensure it covers everything
+                    camWrapper.style.top = '';
+                    camWrapper.style.left = '';
+                    camWrapper.style.bottom = '';
+                    camWrapper.style.right = '';
+                } else {
+                    camWrapper.classList.remove('fullscreen');
+                    scene.background = new THREE.Color(0x050505);
+                    // Reset to default corner position or keep last dragged position? 
+                    // Let's reset for safety or keep it if dragged. 
+                    // Since we modified inline styles during drag, they persist.
+                    if (!camWrapper.style.top) {
+                        camWrapper.style.bottom = '15px';
+                        camWrapper.style.right = '15px';
+                    }
+                }
+                state.wasVoiceModeActive = state.voiceModeActive;
+            }
+
+            // Interpolators
+            state.currentSpread += (state.spreadTarget - state.currentSpread) * 0.08;
+            state.currentScatterScale += (state.scatterScaleTarget - state.currentScatterScale) * 0.1;
+            
+            for(let i=0; i<5; i++) { 
+                state.currentWeights[i] += (state.targetWeights[i] - state.currentWeights[i]) * 0.1;
+            }
+
+            // Update image zoom and globe interaction
+            if (sequenceState.phase === 'gallery' && sequenceState.imagePlanes.length > 0) {
+                // Continuous zoom based on gesture (1 finger = zoom in, 2 fingers = zoom out)
+                if (sequenceState.zoomSpeed !== 0) {
+                    const deltaTime = 0.016; // Approximate frame time
+                    sequenceState.targetZoomScale += sequenceState.zoomSpeed * deltaTime;
+                    sequenceState.targetZoomScale = Math.max(1.0, Math.min(3.5, sequenceState.targetZoomScale));
+                }
+                
+                // Smooth interpolation to target zoom
+                sequenceState.imageZoomScale += (sequenceState.targetZoomScale - sequenceState.imageZoomScale) * 0.2;
+                
+                // Base rotation speed
+                let baseRotationSpeed = 0.005;
+                let anyImageInteracting = false;
+                
+                // Check hand interaction with individual images
+                const imageInteractionRadius = 10.0; // How close hand needs to be to interact
+                
+                sequenceState.imagePlanes.forEach((frameGroup, index) => {
+                    const userData = frameGroup.userData;
+                    let isInteracting = false;
+                    let interactionStrength = 0;
+                    
+                    // Get current world position of image (from frame group)
+                    const worldPos = new THREE.Vector3();
+                    frameGroup.getWorldPosition(worldPos);
+                    
+                    // Check if hand is near this image
+                    if (state.voiceModeActive && state.handPositions.length > 0) {
+                        for (const hPos of state.handPositions) {
+                            const dx = worldPos.x - hPos.x;
+                            const dy = worldPos.y - hPos.y;
+                            const dz = worldPos.z - hPos.z;
+                            const distSq = dx * dx + dy * dy + dz * dz;
+                            const dist = Math.sqrt(distSq);
+                            
+                            if (dist < imageInteractionRadius) {
+                                isInteracting = true;
+                                anyImageInteracting = true;
+                                interactionStrength = 1.0 - (dist / imageInteractionRadius); // 0 to 1
+                                
+                                // Stop auto-rotation on touch/interaction
+                                sequenceState.galleryAutoRotate = false;
+                                sequenceState.rotationPaused = true;
+                                
+                                // Zoom in on touch
+                                sequenceState.galleryTouchZoom = true;
+                                
+                                // Zoom in on this specific image
+                                const zoomAmount = 1.0 + (interactionStrength * 2.0); // Zoom up to 3x
+                                userData.targetScale = zoomAmount;
+                                
+                                break; // Only interact with nearest hand
+                            }
+                        }
+                    }
+                    
+                    // If not interacting, return to normal scale
+                    if (!isInteracting) {
+                        userData.targetScale = 1.0;
+                    }
+                    
+                    // Apply individual scale (smooth interpolation) to frame group
+                    userData.baseScale += (userData.targetScale - userData.baseScale) * 0.2;
+                    const finalScale = userData.baseScale * sequenceState.imageZoomScale;
+                    frameGroup.scale.set(finalScale, finalScale, 1);
+                });
+                
+                // Update image captions with interaction (like text particles)
+                const captionInteractionRadius = 8.0;
+                sequenceState.imageCaptions.forEach((captionSystem, capIndex) => {
+                    const capUserData = captionSystem.userData;
+                    let isInteracting = false;
+                    
+                    // Get world position of caption
+                    const capWorldPos = new THREE.Vector3();
+                    captionSystem.getWorldPosition(capWorldPos);
+                    
+                    // Check hand interaction
+                    if (state.voiceModeActive && state.handPositions.length > 0) {
+                        for (const hPos of state.handPositions) {
+                            const dx = capWorldPos.x - hPos.x;
+                            const dy = capWorldPos.y - hPos.y;
+                            const dz = capWorldPos.z - hPos.z;
+                            const distSq = dx * dx + dy * dy + dz * dz;
+                            const dist = Math.sqrt(distSq);
+                            
+                            if (dist < captionInteractionRadius && dist > 0.1) {
+                                isInteracting = true;
+                                const force = (captionInteractionRadius - dist) / captionInteractionRadius;
+                                
+                                // Apply repulsion to caption particles (like text)
+                                const repulsion = Math.pow(force, 1.5) * 3.0;
+                                const positions = captionSystem.geometry.attributes.position.array;
+                                
+                                for (let i = 0; i < capUserData.posArray.length; i++) {
+                                    const basePos = capUserData.posArray[i];
+                                    let px = basePos.x;
+                                    let py = basePos.y;
+                                    let pz = basePos.z;
+                                    
+                                    const pdx = px - hPos.x;
+                                    const pdy = py - hPos.y;
+                                    const pdz = pz - hPos.z;
+                                    const pDistSq = pdx * pdx + pdy * pdy + pdz * pdz;
+                                    const pDist = Math.sqrt(pDistSq);
+                                    
+                                    if (pDist < captionInteractionRadius && pDist > 0.1) {
+                                        const pForce = (captionInteractionRadius - pDist) / captionInteractionRadius;
+                                        const pRepulsion = Math.pow(pForce, 1.5) * repulsion;
+                                        
+                                        px += (pdx / pDist) * pRepulsion;
+                                        py += (pdy / pDist) * pRepulsion;
+                                        pz += (pdz / pDist) * pRepulsion;
+                                    }
+                                    
+                                    positions[i * 3] = px;
+                                    positions[i * 3 + 1] = py;
+                                    positions[i * 3 + 2] = pz;
+                                }
+                                
+                                captionSystem.geometry.attributes.position.needsUpdate = true;
+                                break;
+                            }
+                        }
+                    }
+                    
+                    // Reset to base positions if not interacting
+                    if (!isInteracting) {
+                        const positions = captionSystem.geometry.attributes.position.array;
+                        for (let i = 0; i < capUserData.posArray.length; i++) {
+                            const basePos = capUserData.posArray[i];
+                            positions[i * 3] += (basePos.x - positions[i * 3]) * 0.1;
+                            positions[i * 3 + 1] += (basePos.y - positions[i * 3 + 1]) * 0.1;
+                            positions[i * 3 + 2] += (basePos.z - positions[i * 3 + 2]) * 0.1;
+                        }
+                        captionSystem.geometry.attributes.position.needsUpdate = true;
+                    }
+                    
+                    // Caption is now a child of frameGroup, so it rotates automatically with the image
+                    // Just position it below the image (relative to frameGroup)
+                    captionSystem.position.set(0, -3, 0); // Relative to frameGroup, below image
+                    captionSystem.lookAt(0, 0, 0); // Face center
+                    captionSystem.rotateY(Math.PI); // Flip to face camera
+                });
+                
+                // Auto-rotate gallery (stop on touch/click)
+                if (sequenceState.galleryGroup && !sequenceState.rotationPaused && sequenceState.galleryAutoRotate) {
+                    // Auto-rotate continuously
+                    sequenceState.galleryGroup.rotation.y += 0.005;
+                } else if (sequenceState.galleryGroup && state.isHandDetected && !sequenceState.rotationPaused) {
+                    // Rotate based on hand movement when hand is detected
+                    const targetRotY = (state.handPositionRaw.x - 0.5) * 2.0;
+                    const currentRotY = sequenceState.galleryGroup.rotation.y;
+                    sequenceState.galleryGroup.rotation.y += (targetRotY - currentRotY) * 0.1;
+                }
+                
+                // Zoom in on touch/click
+                if (sequenceState.galleryTouchZoom && anyImageInteracting) {
+                    sequenceState.targetZoomScale = Math.min(3.5, sequenceState.targetZoomScale + 0.05);
+                } else {
+                    // Gradually return to normal zoom when not touching
+                    sequenceState.targetZoomScale = Math.max(1.0, sequenceState.targetZoomScale - 0.02);
+                    if (!anyImageInteracting) {
+                        sequenceState.galleryTouchZoom = false;
+                    }
+                }
+                
+                // Resume auto-rotation after interaction ends
+                if (!anyImageInteracting && !sequenceState.galleryAutoRotate) {
+                    if (!sequenceState._resumeRotationScheduled) {
+                        sequenceState._resumeRotationScheduled = true;
+                        setTimeout(() => {
+                            // Check again if still no interaction
+                            let stillNoInteraction = true;
+                            if (sequenceState.phase === 'gallery' && sequenceState.imagePlanes.length > 0) {
+                                sequenceState.imagePlanes.forEach((frameGroup) => {
+                                    const worldPos = new THREE.Vector3();
+                                    frameGroup.getWorldPosition(worldPos);
+                                    if (state.voiceModeActive && state.handPositions.length > 0) {
+                                        for (const hPos of state.handPositions) {
+                                            const dx = worldPos.x - hPos.x;
+                                            const dy = worldPos.y - hPos.y;
+                                            const dz = worldPos.z - hPos.z;
+                                            const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+                                            if (dist < 10.0) {
+                                                stillNoInteraction = false;
+                                            }
+                                        }
+                                    }
+                                });
+                            }
+                            
+                            if (stillNoInteraction) {
+                                sequenceState.galleryAutoRotate = true;
+                                sequenceState.rotationPaused = false;
+                                sequenceState.galleryTouchZoom = false;
+                            }
+                            sequenceState._resumeRotationScheduled = false;
+                        }, 1000);
+                    }
+                } else if (anyImageInteracting) {
+                    sequenceState._resumeRotationScheduled = false;
+                }
+                
+                // Interactive globe rotation based on hand position
+                if (sequenceState.globeMesh && state.isHandDetected) {
+                    // Rotate globe based on hand position (inverse of hand movement for natural feel)
+                    const rotY = -(state.handPositionRaw.x - 0.5) * Math.PI * 2;
+                    const rotX = (state.handPositionRaw.y - 0.5) * Math.PI;
+                    
+                    // Smooth interpolation
+                    sequenceState.globeMesh.rotation.y += (rotY - sequenceState.globeMesh.rotation.y) * 0.1;
+                    sequenceState.globeMesh.rotation.x += (rotX - sequenceState.globeMesh.rotation.x) * 0.1;
+                } else if (sequenceState.globeMesh) {
+                    // Auto-rotate slowly when no hand detected
+                    sequenceState.globeMesh.rotation.y += 0.01;
+                }
+            }
+
+            // Hand Rotation 
+            const targetRotY = (state.handPositionRaw.x - 0.5) * 1.5; 
+            const targetRotX = (state.handPositionRaw.y - 0.5) * 1.5;
+            particleSystem.rotation.y += (targetRotY - particleSystem.rotation.y) * 0.1;
+            particleSystem.rotation.x += (targetRotX - particleSystem.rotation.x) * 0.1;
+            
+            // Rotate Galaxy (independent)
+            galaxySystem.rotation.y += 0.002;
+            galaxySystem.rotation.x += 0.001;
+
+            // Animate birthday icons - random floating with hand interaction (like text particles)
+            const iconTime = Date.now() * 0.001;
+            const iconInteractionRadius = 6.0; // Interaction radius for icons
+            const iconRepulsionStrength = 3.0;
+            const iconZoomRadius = 5.0; // Zoom radius (closer than repulsion)
+            
+            birthdayIcons.forEach((icon, index) => {
+                const userData = icon.userData;
+                
+                // Random floating motion (gentle, slow movement)
+                const floatX = userData.baseX + Math.sin(iconTime * userData.floatSpeed + userData.floatTime) * userData.floatOffsetX;
+                const floatY = userData.baseY + Math.cos(iconTime * userData.floatSpeed * 0.7 + userData.floatTime) * userData.floatOffsetY;
+                const floatZ = userData.baseZ + Math.sin(iconTime * userData.floatSpeed * 0.5 + userData.floatTime * 1.3) * userData.floatOffsetZ;
+                
+                // Start with floating position
+                userData.targetPosition.set(floatX, floatY, floatZ);
+                userData.targetScale = userData.baseScale;
+                
+                // Apply hand interaction (repulsion and zoom)
+                if (state.voiceModeActive && state.handPositions.length > 0) {
+                    for (const hPos of state.handPositions) {
+                        const dx = userData.targetPosition.x - hPos.x;
+                        const dy = userData.targetPosition.y - hPos.y;
+                        const dz = userData.targetPosition.z - hPos.z;
+                        const distSq = dx * dx + dy * dy + dz * dz;
+                        const dist = Math.sqrt(distSq);
+                        
+                        if (dist < iconInteractionRadius && dist > 0.1) {
+                            const force = (iconInteractionRadius - dist) / iconInteractionRadius;
+                            
+                            // Repulsion (push away from hand)
+                            const repulsion = Math.pow(force, 1.5) * iconRepulsionStrength;
+                            userData.targetPosition.x += (dx / dist) * repulsion;
+                            userData.targetPosition.y += (dy / dist) * repulsion;
+                            userData.targetPosition.z += (dz / dist) * repulsion;
+                            
+                            // Zoom in when very close (touch)
+                            if (dist < iconZoomRadius) {
+                                const zoomForce = 1.0 - (dist / iconZoomRadius);
+                                const zoomMultiplier = 1.0 + (zoomForce * 1.5); // Zoom up to 2.5x
+                                userData.targetScale = userData.baseScale * zoomMultiplier;
+                            } else {
+                                userData.targetScale = userData.baseScale;
+                            }
+                            
+                            // Visual feedback
+                            icon.material.opacity = Math.min(1.0, 0.9 + force * 0.1);
+                            const glowColor = new THREE.Color();
+                            glowColor.lerpColors(new THREE.Color(0xffffff), new THREE.Color(0xff69b4), force * 0.5);
+                            icon.material.color.copy(glowColor);
+                            
+                            break; // Only interact with nearest hand
+                        } else {
+                            // Return to normal
+                            userData.targetScale = userData.baseScale;
+                            icon.material.opacity = 0.9;
+                            icon.material.color.setHex(0xffffff);
+                        }
+                    }
+                } else {
+                    // No hand interaction - return to normal
+                    userData.targetScale = userData.baseScale;
+                    icon.material.opacity = 0.9;
+                    icon.material.color.setHex(0xffffff);
+                }
+                
+                // Smooth interpolation to target position and scale
+                userData.currentPosition.lerp(userData.targetPosition, 0.15);
+                icon.position.copy(userData.currentPosition);
+                
+                // Smooth scale interpolation
+                const currentScale = icon.scale.x;
+                const targetScale = userData.targetScale;
+                const newScale = currentScale + (targetScale - currentScale) * 0.2;
+                icon.scale.set(newScale, newScale, 1);
+                
+                // Make icons face camera (no spinning)
+                icon.lookAt(camera.position);
+            });
+
+            const positionsArray = particleGeometry.attributes.position.array;
+            const colorsArray = particleGeometry.attributes.color.array;
+
+            const time = Date.now() * 0.001;
+            
+            const w1 = state.currentWeights[0]; 
+            const w2 = state.currentWeights[1]; 
+            const w3 = state.currentWeights[2]; 
+            const w4 = state.currentWeights[3]; 
+            const w5 = state.currentWeights[4]; 
+
+            const interactionRadSq = CONFIG.interactionRadius * CONFIG.interactionRadius;
+            
+            for (let i = 0; i < CONFIG.particleCount; i++) {
+                // 1. Calculate Target
+                const p1 = posText1[i];
+                const p2 = posText2[i];
+                const p3 = posText3[i];
+                const p4 = posText4[i];
+                const p5 = posText5[i]; // Dynamic Text
+
+                const tx = p1.x*w1 + p2.x*w2 + p3.x*w3 + p4.x*w4 + p5.x*w5;
+                const ty = p1.y*w1 + p2.y*w2 + p3.y*w3 + p4.y*w4 + p5.y*w5;
+                const tz = p1.z*w1 + p2.z*w2 + p3.z*w3 + p4.z*w4 + p5.z*w5;
+
+                // 2. Scatter
+                const s = posScatter[i];
+                const sX = s.x * state.currentScatterScale;
+                const sY = s.y * state.currentScatterScale;
+                const sZ = s.z * state.currentScatterScale;
+                
+                const noiseScale = 0.5 * state.currentScatterScale;
+                const nX = Math.sin(time + i*0.1) * noiseScale;
+                const nY = Math.cos(time + i*0.13) * noiseScale;
+
+                // 3. Blend
+                let finalX = THREE.MathUtils.lerp(tx, sX + nX, state.currentSpread);
+                let finalY = THREE.MathUtils.lerp(ty, sY + nY, state.currentSpread);
+                let finalZ = THREE.MathUtils.lerp(tz, sZ, state.currentSpread);
+
+                // 4. Physics Interaction (Multi-Hand)
+                if (state.voiceModeActive && state.handPositions.length > 0) {
+                    for (const hPos of state.handPositions) {
+                        const dx = finalX - hPos.x;
+                        const dy = finalY - hPos.y;
+                        const dz = finalZ - hPos.z;
+                        const distSq = dx*dx + dy*dy + dz*dz;
+
+                        if (distSq < interactionRadSq) {
+                            const dist = Math.sqrt(distSq);
+                            const force = (CONFIG.interactionRadius - dist) / CONFIG.interactionRadius; 
+                            
+                            // Stronger repulsion logic
+                            const repulsion = Math.pow(force, 2) * CONFIG.repulsionStrength; 
+
+                            finalX += (dx / dist) * repulsion * 5; 
+                            finalY += (dy / dist) * repulsion * 5;
+                            finalZ += (dz / dist) * repulsion * 5;
+                        }
+                    }
+                }
+
+                // Update Position
+                const cx = positionsArray[i*3];
+                const cy = positionsArray[i*3+1];
+                const cz = positionsArray[i*3+2];
+                const speed = 0.1;
+                positionsArray[i*3]   += (finalX - cx) * speed;
+                positionsArray[i*3+1] += (finalY - cy) * speed;
+                positionsArray[i*3+2] += (finalZ - cz) * speed;
+
+                // 5. Colors (GRADIENT EFFECT FOR ALL SCENES)
+                const baseColor = new THREE.Color();
+                const cPink1 = new THREE.Color(0xff69b4); // HotPink
+                const cPurple = new THREE.Color(0xda70d6); // Orchid
+                const cBlueNeon = new THREE.Color(0x00ffff); // Cyan for AR
+                const cGold = new THREE.Color(0xffd700); // Gold
+                const cWhite = new THREE.Color(0xffffff);
+                
+                // Time-based gradient animation
+                const gradientTime = Date.now() * 0.001;
+                const gradientHue = (gradientTime * 0.1) % 1.0; // Slow hue rotation
+                
+                // Position-based gradient (vertical gradient)
+                const normalizedY = (finalY + 20) / 40; // Normalize Y position (-20 to 20)
+                const gradientFactor = Math.max(0, Math.min(1, normalizedY)); // Clamp 0-1
+                
+                if (state.currentSpread > 0.8) {
+                    // Scatter Color with gradient
+                    const dist = Math.sqrt(finalX*finalX + finalY*finalY + finalZ*finalZ);
+                    const normDist = Math.min(dist / 40, 1);
+                    const hue = (gradientHue + normDist * 0.3) % 1.0;
+                    baseColor.setHSL(hue, 0.8, 0.6 + normDist*0.2);
+                } else {
+                    if (w5 > 0.5) {
+                        // Birthday sequence text -> Gradient colors (pink/cyan/gold/purple)
+                        if (sequenceState.isActive && sequenceState.phase !== 'gallery') {
+                            // Create gradient from pink -> cyan -> gold -> purple
+                            const gradientColors = [cPink1, cBlueNeon, cGold, cPurple];
+                            const colorIndex = Math.floor(gradientHue * 4) % 4;
+                            const nextColorIndex = (colorIndex + 1) % 4;
+                            const t = (gradientHue * 4) % 1.0;
+                            
+                            baseColor.lerpColors(gradientColors[colorIndex], gradientColors[nextColorIndex], t);
+                            baseColor.offsetHSL(0, 0, 0.2); // Make brighter
+                            
+                            // Add position-based gradient variation
+                            const posGradient = Math.sin(finalX * 0.1 + gradientTime) * 0.1;
+                            baseColor.offsetHSL(posGradient, 0, 0);
+                            
+                            // Sparkle effect
+                            if (Math.random() > 0.90) baseColor.setHex(0xffffff);
+                        } else {
+                            // AR / Voice Mode -> Gradient blue/cyan
+                            const hue = (gradientHue + gradientFactor * 0.3) % 1.0;
+                            baseColor.setHSL(hue, 1.0, 0.5);
+                            baseColor.offsetHSL(0, 0, 0.1); 
+                            // Sparkle
+                            if (Math.random() > 0.92) baseColor.setHex(0xffffff);
+                        }
+                    } else if (w1>0.5 || w2>0.5 || w3>0.5 || w4>0.5) {
+                        // Gestures -> Gradient pink/purple with position variation
+                        const hue = (0.8 + gradientHue * 0.2 + (finalX / 60) * 0.1) % 1.0;
+                        baseColor.setHSL(hue, 0.8, 0.7);
+                    } else {
+                        // Default -> Gradient white/cyan
+                        const hue = (gradientHue + gradientFactor * 0.2) % 1.0;
+                        baseColor.setHSL(hue, 0.3, 0.9);
+                    }
+                }
+
+                colorsArray[i*3] = baseColor.r;
+                colorsArray[i*3+1] = baseColor.g;
+                colorsArray[i*3+2] = baseColor.b;
+            }
+
+            particleGeometry.attributes.position.needsUpdate = true;
+            particleGeometry.attributes.color.needsUpdate = true;
+
+            // Galaxy Animation (Opacity matches Gesture 4)
+            galaxyMaterial.opacity = THREE.MathUtils.lerp(galaxyMaterial.opacity, state.galaxyEffectActive ? 0.8 : 0.0, 0.03);
+
+            controls.update();
+            renderer.render(scene, camera);
+        }
+
+        animate();
+
+    </script>
+</body>
+</html>
